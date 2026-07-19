@@ -171,7 +171,11 @@ uniform float MicHazeOpacity = 0.0;  // per-cell opacity of the translucent inte
 uniform float MicShell = 0.0;        // > 0.5 to draw the opaque view-distance shell (hard cut-off)
 // Solid (away-facing) cloud faces are only worth generating near the camera; past this they create giant distant
 // cubes at low LOD. Gate Simple Clouds' TestFacesFacingAway to this radius (in cell units; 16 cells = 128 blocks).
-#define MIC_SOLID_NEAR_CELLS 16.0
+// A uniform rather than a #define so compatibility patches can widen it: an Immersive Portals portal views the
+// clouds from a camera far from Origin (fold destinations sit >512 blocks out), and every cell past this radius
+// falls back to Origin-facing culling - see-through clouds in the portal. While portals are on screen the
+// Immersive Portals patch raises this to cover the whole mesh (stock Simple Clouds' complete-mesh behaviour).
+uniform float MicSolidNearCells = 16.0;
 // Radial thickness (cell units) of the opaque shell drawn at the view distance - thick enough to be gapless.
 #define MIC_SHELL_CELLS 2.5
 // Remove small isolated "floating" cloud clusters at any LOD-coarsened ring (LodLevel >= 1, i.e. any cloud the LOD has
@@ -430,7 +434,7 @@ void createCube(float x, float y, float z, float cubeRadius, float brightness, f
 	vec3 center = pos + cubeRadius;
 	// Better Simple Clouds: only keep away-facing faces for cells near the camera; far away they just produce giant
 	// low-LOD cubes (the "huge cube at render distance"). Past the radius this falls back to normal facing culling.
-	bool solidFaces = TestFacesFacingAway && distance(pos, Origin) < MIC_SOLID_NEAR_CELLS;
+	bool solidFaces = TestFacesFacingAway && distance(pos, Origin) < MicSolidNearCells;
 	// Better Simple Clouds: remove small isolated "floating" clusters at any LOD-coarsened ring (LodLevel >= 1). The whole
 	// cluster is dropped only when its connected size is <= MicMaxClusterCells, so single stray cubes / tiny blobs in LOD
 	// chunks vanish while big formations (huge connected clusters) are left completely intact - no surface erosion, no
@@ -461,6 +465,39 @@ void createCube(float x, float y, float z, float cubeRadius, float brightness, f
 // a cloud. Bypasses neighbour-occlusion (so the shell is solid even between cloud cells) but still only emits the
 // faces that point toward the camera - emitting all six would make adjacent shell cells share coincident faces, which
 // z-fight into flickering "glitchy" geometry. Camera-facing faces alone occlude the view just the same.
+// === Better Simple Clouds: true if createCube() above would emit at least one opaque face for this cell - i.e. the
+// cell sits on the cloud's SURFACE and already has real geometry at exactly this position. Mirrors createCube's
+// per-face conditions exactly, so the two can never disagree about what is solid.
+//
+// The interior fill MUST skip such cells. Both the haze cube and the view-distance shell are emitted at the same
+// position and the same radius as createCube's faces, so on a surface cell they land exactly coincident with geometry
+// that is already there. Two surfaces at identical depth - rasterized from different meshes (the opaque pass expands
+// per-side quads, the fill expands a whole cube) - disagree in the last bits of float depth, so the depth test
+// resolves them inconsistently from pixel to pixel and frame to frame. That is the shimmering "weird faces" pattern:
+// it appears wherever a cloud surface is within the fill radius, inside the cloud or out.
+//
+// A cell createCube leaves alone emits nothing at all (faces between two solid cells are culled) - that is the hollow
+// interior the fill exists to fill, and it is the only place the fill may safely add geometry. ===
+bool micHasOpaqueFace(float x, float y, float z, LayerGroup group, float fade)
+{
+	vec3 pos = vec3(x, y, z);
+	vec3 norm = normalize(pos - Origin);
+	bool solidFaces = TestFacesFacingAway && distance(pos, Origin) < MicSolidNearCells;
+	if ((solidFaces || dot(norm, vec3(0.0, -1.0, 0.0)) <= 0.0) && (!isPosValid(x, y - Scale, z, group, fade) || shouldNotOcclude(2)))
+		return true;
+	if ((solidFaces || dot(norm, vec3(0.0, 1.0, 0.0)) <= 0.0) && (!isPosValid(x, y + Scale, z, group, fade) || shouldNotOcclude(3)))
+		return true;
+	if ((solidFaces || dot(norm, vec3(-1.0, 0.0, 0.0)) <= 0.0) && (!isPosValid(x - Scale, y, z, -1, 0) || shouldNotOcclude(0)))
+		return true;
+	if ((solidFaces || dot(norm, vec3(1.0, 0.0, 0.0)) <= 0.0) && (!isPosValid(x + Scale, y, z, 1, 0) || shouldNotOcclude(1)))
+		return true;
+	if ((solidFaces || dot(norm, vec3(0.0, 0.0, -1.0)) <= 0.0) && (!isPosValid(x, y, z - Scale, 0, -1) || shouldNotOcclude(4)))
+		return true;
+	if ((solidFaces || dot(norm, vec3(0.0, 0.0, 1.0)) <= 0.0) && (!isPosValid(x, y, z + Scale, 0, 1) || shouldNotOcclude(5)))
+		return true;
+	return false;
+}
+
 void createSolidCube(float x, float y, float z, float cubeRadius, float brightness)
 {
 	vec3 pos = vec3(x, y, z);
@@ -544,7 +581,13 @@ void main()
     	// add translucent haze that thickens with distance; right at the view distance we switch to a SOLID opaque
     	// shell so you genuinely cannot see past it (real geometry -> works under any shaderpack). Everything scales
     	// with MicFillStrength (how deep inside the cloud the camera is) so it fades in/out as you enter and leave.
-    	if (MicFillStrength > 0.0)
+    	// Only ever fill cells createCube left HOLLOW. A surface cell already has an opaque face at exactly this
+    	// position and radius, and adding the haze cube (or the shell) on top of it puts two surfaces at the same
+    	// depth: they are built from different meshes, so the depth test picks a different winner per pixel and per
+    	// frame and the seam shimmers - the "weird faces" pattern, visible wherever a cloud surface came within the
+    	// fill radius. See micHasOpaqueFace. Genuinely hollow cells emit no opaque geometry at all, so filling those
+    	// (which is what "fill the hollow interior" always meant) can never collide with anything.
+    	if (MicFillStrength > 0.0 && !micHasOpaqueFace(x, y, z, group, fade))
     	{
     		float micDist = distance(vec3(x, y, z), Origin);
     		if (micDist < MicViewDist)

@@ -306,6 +306,52 @@ public final class SodiumConfigIntegration implements ConfigEntryPoint {
                 BetterSimpleCloudsConfig::inCloudVerticalPaddingBlocks);
 
         // ---------- Cloud appearance ----------
+        final IntegerOptionBuilder softTerrain = builder
+            .createIntegerOption(id("soft_terrain_fade"))
+            .setName(Component.literal("Soft Terrain Edge"))
+            .setTooltip(Component.literal(
+                "Soften where clouds cut into terrain. Cloud cubes know nothing about the world, so a cloud meeting a "
+                    + "mountain gives a hard edge - and since the two surfaces then sit at nearly the same depth they "
+                    + "Z-FIGHT, making the intersection flicker. Fading the cloud out near terrain turns the cut into a "
+                    + "gradient and stops the flicker. 0 = off (stock); 8-16 blocks is a natural haze. NEEDS A "
+                    + "SHADERPACK (Iris) - only then do clouds render after the world, which is what makes terrain depth "
+                    + "available. Does nothing with shaders off."))
+            .setRange(0, 64, 2)
+            .setDefaultValue(12)
+            .setImpact(OptionImpact.LOW)
+            .setValueFormatter(value -> value == 0 ? Component.literal("Off") : SodiumConfigIntegration.blocks(value))
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setSoftTerrainFadeBlocks,
+                BetterSimpleCloudsConfig::softTerrainFadeBlocks);
+
+        final BooleanOptionBuilder nightClouds = builder
+            .createBooleanOption(id("night_clouds"))
+            .setName(Component.literal("Better Night Clouds"))
+            .setTooltip(Component.literal(
+                "Make clouds look good at night instead of flat grey blobs. Simple Clouds darkens night clouds to a "
+                    + "near-uniform dark grey that flattens the shading giving a cloud its shape; this re-opens that "
+                    + "crushed range, lifts exposure a little and adds a cool moonlit cast so the form reads again. "
+                    + "Only affects night (fades in after dusk; daytime is untouched) and works with or without shaders."))
+            .setImpact(OptionImpact.LOW)
+            .setDefaultValue(true)
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudNightBoost, BetterSimpleCloudsConfig::cloudNightBoost);
+
+        final IntegerOptionBuilder nightBrightness = builder
+            .createIntegerOption(id("night_clouds_strength"))
+            .setName(Component.literal("Night Cloud Brightness"))
+            .setTooltip(Component.literal(
+                "How strong the night look is. 100% = the default moonlit grade; lower = closer to Simple Clouds' "
+                    + "darker vanilla night; higher = brighter, more lifted night clouds. 0% = off. Only matters when "
+                    + "Better Night Clouds is on."))
+            .setRange(0, 200, 5)
+            .setDefaultValue(100)
+            .setImpact(OptionImpact.LOW)
+            .setValueFormatter(value -> value == 0 ? Component.literal("Off") : SodiumConfigIntegration.percent(value))
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudNightBoostPercent,
+                BetterSimpleCloudsConfig::cloudNightBoostPercent);
+
         final BooleanOptionBuilder shaderMatch = builder
             .createBooleanOption(id("incloud_shader_match"))
             .setName(Component.literal("Match Clouds to Shaders"))
@@ -357,6 +403,39 @@ public final class SodiumConfigIntegration implements ConfigEntryPoint {
             .setStorageHandler(() -> {})
             .setBinding(BetterSimpleCloudsConfig::setInCloudShaderSaturationPercent,
                 BetterSimpleCloudsConfig::inCloudShaderSaturationPercent);
+
+        final IntegerOptionBuilder moonGlow = builder
+            .createIntegerOption(id("cloud_moon_glow"))
+            .setName(Component.literal("Moonlight Through Clouds"))
+            .setTooltip(Component.literal(
+                "The silver lining. Cloud droplets scatter light overwhelmingly FORWARDS, which is why a cloud "
+                    + "drifting across the moon lights up along its edge instead of just blocking it - Simple Clouds "
+                    + "has no notion of the moon, so it goes flat grey instead. Scales itself by moon PHASE (a full "
+                    + "moon is ~4.4x a quarter; a new moon gives nothing), altitude, rain and time of day, so it is "
+                    + "silent by day and in a storm without tuning."))
+            .setRange(0, 200, 5)
+            .setDefaultValue(75)
+            .setImpact(OptionImpact.LOW)
+            .setValueFormatter(value -> value == 0 ? Component.literal("Off") : SodiumConfigIntegration.percent(value))
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudMoonGlowPercent,
+                BetterSimpleCloudsConfig::cloudMoonGlowPercent);
+
+        final IntegerOptionBuilder moonGlowSharpness = builder
+            .createIntegerOption(id("cloud_moon_glow_sharpness"))
+            .setName(Component.literal("Moon Glow Tightness"))
+            .setTooltip(Component.literal(
+                "How tightly the glow hugs the moon, as a scattering asymmetry. 76% is a realistic cloud-droplet "
+                    + "value: sharply peaked forward, so the lining reads as a bright RIM on the cloud in front of the "
+                    + "moon. Lower spreads it into a broad wash across more of the sky; higher concentrates it into a "
+                    + "tighter, more dramatic halo."))
+            .setRange(0, 95, 5)
+            .setDefaultValue(76)
+            .setImpact(OptionImpact.LOW)
+            .setValueFormatter(SodiumConfigIntegration::percent)
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudMoonGlowSharpnessPercent,
+                BetterSimpleCloudsConfig::cloudMoonGlowSharpnessPercent);
 
         final BooleanOptionBuilder edgeFade = builder
             .createBooleanOption(id("incloud_edge_fade"))
@@ -435,6 +514,11 @@ public final class SodiumConfigIntegration implements ConfigEntryPoint {
                 .addOption(vpad))
             .addOptionGroup(builder.createOptionGroup()
                 .setName(Component.literal("Appearance"))
+                .addOption(softTerrain)
+                .addOption(nightClouds)
+                .addOption(nightBrightness)
+                .addOption(moonGlow)
+                .addOption(moonGlowSharpness)
                 .addOption(shaderMatch)
                 .addOption(skyTint)
                 .addOption(brightness)

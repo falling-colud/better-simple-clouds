@@ -8,9 +8,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.util.Mth;
 
 import dev.bettersimpleclouds.core.BetterSimpleCloudsConfig;
+import dev.bettersimpleclouds.immersion.CloudMoonGlow;
+import dev.bettersimpleclouds.immersion.CloudNightGrade;
+import dev.bettersimpleclouds.immersion.CloudSceneGrade;
+import dev.bettersimpleclouds.immersion.CloudSoftFade;
 import dev.bettersimpleclouds.immersion.InteriorFillState;
 
 import dev.nonamecrackers2.simpleclouds.client.mesh.generator.CloudMeshGenerator;
@@ -37,8 +43,12 @@ import dev.nonamecrackers2.simpleclouds.client.shader.SingleSSBOShaderInstance;
  * (byte-for-byte stock weighting). Set at the {@code HEAD} of {@code renderCloudsTransparency}, before Simple Clouds
  * applies (uploads) the shader, exactly like {@link CloudShaderMatchMixin} feeds the opaque shader.</p>
  *
- * <p>Only applied while the camera is <b>outside</b> clouds (where the artifact shows); when in-cloud immersion is on and
- * you're inside a cloud, the interior fill's translucent haze is left on stock weighting (envelopment gate). Gated on
+ * <p>The fix is held fully on until the camera is half-enveloped and then eased out as it sinks into a cloud, where the
+ * interior fill's own translucent haze is meant to read as designed. It is a ramp rather than a threshold on purpose:
+ * {@code envelopment} is not a density reading (it is a 2D cloud-region footprint times a camera-Y band test, so it sits
+ * near 1.0 anywhere at cloud altitude over a region, including in clear gaps viewed from outside), so an early cut-off
+ * switched the fix off precisely where its artifact is visible. This mixin also feeds the soft terrain fade, since the
+ * fringe and interior haze are transparent-pass geometry that the opaque pass' fade never reaches. Gated on
  * {@code simpleclouds} (client) via the immersion patch's mixin plugin; {@code remap = false}.</p>
  */
 @Mixin(value = SimpleCloudsRenderer.class, remap = false)
@@ -56,12 +66,38 @@ public abstract class SimpleCloudsRendererTransparencyWeightMixin {
         final SingleSSBOShaderInstance shader = SimpleCloudsShaders.getCloudsTransparencyShader();
         if (shader == null)
             return;
-        // Outside clouds only: inside a cloud the in-cloud immersion interior fill emits its own translucent haze cubes
-        // that are meant to read as designed, so leave them on stock weighting (envelopment is > 0 only when in-cloud
-        // immersion is enabled and the camera is inside a cloud).
+
+        // Scene grade + night grade + soft terrain fade: all global for the frame, so set them regardless of the
+        // envelopment ramp below. The terrain fade matters here because the interior-fill haze and the soft fringe are
+        // transparent-pass geometry - the opaque pass' fade does not reach them.
+        //
+        // The scene grade MUST be fed here with the same values CloudShaderMatchMixin feeds the opaque pass. The fringe
+        // wraps the body, so grading only the body modulates it by fringe alpha - which is the cloud noise field - and
+        // stencils that noise across every cloud face. See CloudSceneGrade. Both passes are handed the same fogEnd
+        // (each reads SimpleCloudsRenderer.getFogEnd()), so they stay matched even when a fog mod clamps it.
+        CloudSceneGrade.feed(shader, partialTick, fogEnd);
+        CloudNightGrade.feed(shader, Minecraft.getInstance().level, partialTick);
+        CloudMoonGlow.feed(shader, Minecraft.getInstance().level, partialTick);
+        CloudSoftFade.feed(shader);
+
+        // Deep inside a cloud the interior fill's own haze cubes are meant to read as designed, so EASE the edge fix out
+        // rather than switching it off. This used to be `envelopment > 0.02F -> flatten = 0`, which was a bug on two
+        // counts: envelopment is not a density reading (it is a 2D cloud-region footprint times a camera-Y band test, so
+        // it pins near 1.0 anywhere at cloud altitude over a region - including in clear gaps while looking at a cloud
+        // from outside), and it eases at 0.18/tick so it clears 0.02 on the very first tick. Between them, the edge fix
+        // was switched off in one frame exactly where the artifact it exists to fix is visible. Holding it fully on until
+        // half-enveloped and easing out over 0.5 -> 0.9 also removes that pop from the outside->inside seam.
         float flatten = BetterSimpleCloudsConfig.transparentEdgeWeightFlatten();
-        if (BetterSimpleCloudsConfig.inCloudEnabled() && InteriorFillState.envelopment > 0.02F)
-            flatten = 0.0F;
+        if (BetterSimpleCloudsConfig.inCloudEnabled())
+            flatten *= 1.0F - Mth.clamp((InteriorFillState.envelopment - 0.5F) / 0.4F, 0.0F, 1.0F);
         shader.safeGetUniform("MicWeightFlatten").set(flatten);
+
+        // The extent the OIT weight's depth term is normalized over. Simple Clouds hardcodes 1000 blocks, which only
+        // spreads fragments across z if the cloud field is actually that deep; fogEnd is the field's real size (Simple
+        // Clouds derives the mesh cull distance from it), so a fog mod that shrinks the field shrinks this with it and
+        // the depth term keeps ordering near over far. The shader clamps to 1000, so this is stock at normal field
+        // sizes and only engages once the field is genuinely smaller. Not gated on a config: it is a correction that
+        // restores Simple Clouds' intended weighting, not a feature.
+        shader.safeGetUniform("MicWeightScale").set(fogEnd);
     }
 }

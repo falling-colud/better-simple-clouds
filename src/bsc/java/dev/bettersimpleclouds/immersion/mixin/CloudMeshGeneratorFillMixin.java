@@ -79,6 +79,10 @@ public abstract class CloudMeshGeneratorFillMixin {
         s.forUniform("MicViewDist", (id, loc) -> GL41.glProgramUniform1f(id, loc, InteriorFillState.viewDistCells));
         s.forUniform("MicHazeOpacity", (id, loc) -> GL41.glProgramUniform1f(id, loc, InteriorFillState.hazeOpacity));
         s.forUniform("MicShell", (id, loc) -> GL41.glProgramUniform1f(id, loc, InteriorFillState.shell));
+        // Radius of the away-facing-face gate; compatibility patches widen it while other cameras (portals) are
+        // looking at the clouds. See InteriorFillState.solidFaceRadiusCells and cube_mesh.comp.
+        s.forUniform("MicSolidNearCells",
+            (id, loc) -> GL41.glProgramUniform1f(id, loc, InteriorFillState.solidFaceRadiusCells));
         // Far-cloud LOD tuning (per-type softening + small-floater cluster cull). Read straight from config so it works
         // regardless of the in-cloud immersion master switch; 0 -> inert (stock). See cube_mesh.comp.
         s.forUniform("MicBigLodStrength",

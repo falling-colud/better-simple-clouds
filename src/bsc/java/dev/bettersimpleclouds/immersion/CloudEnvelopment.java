@@ -88,6 +88,40 @@ public final class CloudEnvelopment {
         return this.storminess;
     }
 
+    /**
+     * Instantaneous (un-smoothed) envelopment measured at an <em>arbitrary</em> world position, querying the
+     * cloud state directly rather than through {@link WorldEffects}'s cached at-camera fields. Same formula as
+     * {@link #instantaneous()}; touches no instance or debug state, so callers (e.g. compatibility patches
+     * measuring an Immersive Portals portal camera) can probe freely without disturbing the live detector.
+     */
+    public static float instantaneousAt(final double x, final double y, final double z) {
+        final SimpleCloudsRenderer renderer = SimpleCloudsRenderer.getOptionalInstance().orElse(null);
+        if (renderer == null)
+            return 0.0F;
+        final ClientLevel level = Minecraft.getInstance().level;
+        if (level == null)
+            return 0.0F;
+
+        final CloudManager<ClientLevel> manager = CloudManager.get(level);
+        final var result = manager.getCloudTypeAtWorldPos((float) x, (float) z);
+        final CloudType type = result.getLeft();
+        if (type == null)
+            return 0.0F;
+
+        // Identical to instantaneous(): presence = 1 - fade, sharpened; then the soft vertical band over the
+        // cloud type's real noise height range.
+        final float horizontal = Mth.clamp((1.0F - result.getRight()) * 1.15F, 0.0F, 1.0F);
+        if (horizontal <= 0.0F)
+            return 0.0F;
+        final int cloudBase = manager.getCloudHeight();
+        final float bottom = cloudBase + type.noiseConfig().getStartHeight() * CELL_BLOCKS;
+        final float top = cloudBase + type.noiseConfig().getEndHeight() * CELL_BLOCKS;
+        final float vertical = verticalBand((float) y, bottom, top);
+        if (vertical <= 0.0F)
+            return 0.0F;
+        return horizontal * vertical;
+    }
+
     /** Instantaneous (un-smoothed) target from the current camera position and cloud state; records debug state. */
     private float instantaneous() {
         this.dbgHorizontal = 0.0F;

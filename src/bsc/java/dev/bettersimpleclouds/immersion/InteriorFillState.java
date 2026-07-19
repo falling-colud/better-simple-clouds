@@ -29,6 +29,16 @@ public final class InteriorFillState {
     /** {@code 1} to draw the opaque view-distance shell (hard cut-off), {@code 0} for haze only. */
     public static volatile float shell;
 
+    /** Default radius (cell units) within which away-facing cloud faces are kept when Simple Clouds'
+     * test-occluded-faces flag is on; past it the shader falls back to camera-facing culling (far away, solid
+     * faces just make giant low-LOD cubes). 16 cells = 128 blocks. */
+    public static final float DEFAULT_SOLID_FACE_RADIUS_CELLS = 16.0F;
+
+    /** Radius (cell units) for the away-facing-face gate ({@code MicSolidNearCells}). Compatibility patches may
+     * raise it - Immersive Portals views the clouds from cameras far outside it, where the gate's fallback culling
+     * shows as see-through clouds - and should restore {@link #DEFAULT_SOLID_FACE_RADIUS_CELLS} afterwards. */
+    public static volatile float solidFaceRadiusCells = DEFAULT_SOLID_FACE_RADIUS_CELLS;
+
     private InteriorFillState() {}
 
     /** Refresh from the current envelopment and config (called each client tick while in a level). */

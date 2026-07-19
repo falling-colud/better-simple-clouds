@@ -27,8 +27,8 @@ repositories {
     maven { url = 'https://maven.caffeinemc.net/releases'     ; name = 'CaffeineMC'   }
     maven { url = 'https://maven.nonamecrackers2.dev/releases'; name = 'nonamecrackers2' }
     maven { url = 'https://maven.bawnorton.com/releases'      ; name = 'Bawnorton'    } // MixinSquared
-    // Shared, provided-at-runtime mod jars live one level up (see ../libs/README.md).
-    flatDir { dirs 'libs', '../libs' }
+    // Shared, provided-at-runtime mod jars live two levels up (see ../../libs/README.md).
+    flatDir { dirs 'libs', '../../libs' }
 }
 
 neoForge {
@@ -64,9 +64,9 @@ configurations {
 
 dependencies {
     // Every mod this patch bridges, provided at runtime by the modpack (compileOnly here so they are NOT
-    // bundled). The patches self-gate at runtime. Preferred source: local jars in ../libs.
+    // bundled). The patches self-gate at runtime. Preferred source: local jars in ../../libs.
     compileOnly fileTree(dir: 'libs', include: ['*.jar'])
-    compileOnly fileTree(dir: '../libs', include: ['*.jar'])
+    compileOnly fileTree(dir: '../../libs', include: ['*.jar'])
 
     // Simple Clouds' public API (ModifyCloudRenderDistanceEvent etc.); bundled into Simple Clouds at runtime.
     compileOnly 'nonamecrackers2:simplecloudsapi-neoforge:1.4-1.21.1'

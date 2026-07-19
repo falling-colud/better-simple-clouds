@@ -3,8 +3,8 @@
 // Better Simple Clouds: a copy of Simple Clouds' clouds.fsh with a small "sit nicely in a shader-lit scene" pass added
 // at the end. Better Simple Clouds registers the cloud shader as bettersimpleclouds:clouds (reusing Simple Clouds' own
 // vertex shader, so the SSBO geometry expansion is unchanged) so this fragment shader runs instead of the stock one.
-// All additions are inert at their defaults (MicSkyTint = 0, MicBrightness = 1, MicSaturation = 1) -> identical to
-// Simple Clouds. The patch feeds the live values + the scene sky colour each frame (CloudShaderMatchMixin).
+// All additions are inert at their defaults (MicSkyTint = 0, MicBrightness = 1, MicSaturation = 1, MicNightStrength = 0)
+// -> identical to Simple Clouds. The patch feeds the live values + the scene sky colour each frame (CloudShaderMatchMixin).
 // If Simple Clouds updates clouds.fsh, re-copy it and re-apply the marked block.
 
 uniform sampler2D BayerMatrixSampler;
@@ -30,11 +30,78 @@ uniform float MicEdgeFadeEnd = 0.0;
 // the horizon). This holds that back so far/edge clouds stay vivid. 0 = stock fade; 1 = clouds keep full colour to the
 // edge (can look like they don't sit in the haze). Inert at 0.
 uniform float MicFogResist = 0.0;
+// Night legibility: at night Simple Clouds' clouds collapse into flat dark grey blobs - the cloud colour is multiplied
+// down to a dark grey and the per-cube brightness that gives a cloud its shape gets crushed into the bottom of the
+// range where nothing reads. This opens that range back up (gamma), lifts exposure and adds a cool moonlit cast so the
+// cloud's form is visible again. MicNight = how "night" it is (0 by day -> inert), MicNightStrength = configured
+// strength (0 = off). Fed each frame by CloudNightGrade. Inert at defaults -> identical to Simple Clouds.
+uniform float MicNight = 0.0;
+uniform float MicNightStrength = 0.0;
+// Soft terrain intersection ("soft particles"): where a cloud cube cuts into terrain, Simple Clouds draws a hard
+// polygonal edge AND the two near-coincident surfaces z-fight (the intersection visibly flickers as the depth test
+// flips between them). Fading the cloud out as it approaches the terrain behind it fixes both: the cut becomes a
+// gradient, and the flicker stops because the cloud contributes ~nothing exactly where the surfaces coincide.
+// MicSceneDepth is the scene (terrain) depth buffer; MicSoftFade is the fade distance in blocks (0 = off).
+// ONLY valid on Simple Clouds' shader-support pipeline, where terrain depth is copied in before clouds draw - the
+// patch feeds MicSoftFade = 0 on the default pipeline, where terrain hasn't rendered yet.
+uniform sampler2D MicSceneDepth;
+uniform float MicSoftFade = 0.0;
+// Near/far are fed explicitly (CloudSoftFade) and must NOT be read back out of ProjMat: Minecraft post-multiplies the
+// view-bob matrix INTO the projection (GameRenderer.renderLevel), so ProjMat is P*Bob and ProjMat[2][2] is c*cos(bob),
+// not the perspective coefficient c. Simple Clouds also overrides getDepthFar globally to 10240, which makes the
+// reconstruction so ill-conditioned that the tiny bob term dominates and flips the result's sign - that is what made
+// this fade collapse to 0 and delete every cloud while WALKING (bob is only non-zero on the ground; flying was fine).
+uniform float MicNear = 0.0;
+uniform float MicFar = 0.0;
+
+// === Better Simple Clouds: moonlight scattering THROUGH the cloud (the silver lining). ===
+// Cloud droplets scatter light overwhelmingly FORWARDS, which is why a cloud drifting across the moon lights up
+// along its edge instead of just blocking it. Simple Clouds has no notion of the moon, so a cloud crossing a full
+// moon simply goes flat grey. MicMoonDir is the moon's direction in WORLD space (transformed here by the shader's
+// own ModelViewMat, so it can never drift out of sync with the geometry); MicMoonGlow is the master intensity,
+// already scaled by phase, altitude, rain and time of day on the CPU. Inert at MicMoonGlow = 0.
+uniform mat4 ModelViewMat;
+uniform mat4 ProjMat;
+uniform vec3 MicMoonDir = vec3(0.0);
+uniform vec3 MicMoonColor = vec3(1.0);
+uniform float MicMoonGlow = 0.0;
+uniform float MicMoonSharpness = 0.76;
+uniform vec2 MicScreenSize = vec2(1920.0, 1080.0);
+
+// Henyey-Greenstein forward-scattering lobe, normalised to peak at exactly 1.0 looking straight at the moon.
+// g ~ 0.76 is a realistic cloud-droplet asymmetry: sharply peaked forward, which is what makes the lining a thin
+// bright rim rather than an even wash over the whole sky.
+vec3 micMoonScatter()
+{
+	if (MicMoonGlow <= 0.0)
+		return vec3(0.0);
+	// View ray for this fragment, straight from the projection matrix - no varying needed, so Simple Clouds' own
+	// vertex shader stays untouched.
+	vec2 ndc = (gl_FragCoord.xy / MicScreenSize) * 2.0 - 1.0;
+	vec3 ray = normalize(vec3(ndc.x / ProjMat[0][0], ndc.y / ProjMat[1][1], -1.0));
+	vec3 moonView = normalize((ModelViewMat * vec4(MicMoonDir, 0.0)).xyz);
+	float ct = max(dot(ray, moonView), 0.0);
+	float g = clamp(MicMoonSharpness, 0.0, 0.95);
+	float gg = g * g;
+	float denom = max(1.0 + gg - 2.0 * g * ct, 1.0e-4);
+	float hg = (1.0 - gg) / pow(denom, 1.5);
+	float norm = (1.0 - g) * (1.0 - g) / (1.0 + g);   // hg at ct = 1, inverted
+	return MicMoonColor * (MicMoonGlow * hg * norm);
+}
 
 in vec4 vertexColor;
 in float fogDistance;
 
 out vec4 fragColor;
+
+// Window depth [0,1] -> positive view distance in blocks. Standard perspective linearization with EXPLICIT near/far,
+// which stays exact under view bobbing: for M = P*Bob the bob only rotates/translates the eye, so clip.w is still -z'
+// and this recovers z' - the one space the scene and cloud fragments at a given pixel genuinely share.
+float micViewDist(float winZ)
+{
+	float ndc = winZ * 2.0 - 1.0;
+	return (2.0 * MicNear * MicFar) / (MicFar + MicNear - ndc * (MicFar - MicNear));
+}
 
 void main()
 {
@@ -44,6 +111,25 @@ void main()
 		discard;
 
 	vec4 color = vertexColor * vec4(ColorModulator.rgb, 1.0);
+
+	// === Better Simple Clouds: night legibility (see uniform notes above). Grade the cloud's OWN colour here, before the
+	// distance-fog blend below, so far night clouds still recede into the horizon. Open up the crushed dark range with a
+	// gamma < 1 (which spreads out the per-cube brightness that shapes the cloud), lift exposure, and tint toward a cool
+	// moonlit hue - instead of the flat dark grey. Blended in by MicNight so it fades on smoothly at dusk and is exactly a
+	// no-op by day (MicNight = 0). MicNightStrength scales the whole thing (0 = off). ===
+	if (MicNightStrength > 0.0 && MicNight > 0.0)
+	{
+		float s = min(MicNightStrength, 2.0);
+		vec3 graded = pow(max(color.rgb, vec3(0.0)), vec3(mix(1.0, 0.72, s)));
+		graded *= mix(1.0, 1.75, s);
+		graded *= mix(vec3(1.0), vec3(0.80, 0.88, 1.05), clamp(MicNightStrength, 0.0, 1.0));
+		color.rgb = mix(color.rgb, graded, clamp(MicNight, 0.0, 1.0));
+	}
+
+	// Better Simple Clouds: add the moon's forward-scattered light. Placed BEFORE the distance-fog blend so a glowing
+	// far cloud still recedes into the horizon haze rather than burning through it.
+	color.rgb += micMoonScatter();
+
 	// Better Simple Clouds: optionally hold back Simple Clouds' distance-fog wash so far/edge clouds stay vivid.
 	color = mix(color, FogColor, smoothstep(FogStart, FogEnd, fogDistance) * (1.0 - clamp(MicFogResist, 0.0, 1.0)));
 
@@ -72,5 +158,35 @@ void main()
 		color.rgb = mix(color.rgb, FogColor.rgb, clamp(edge * MicEdgeFadeStrength, 0.0, 1.0));
 	}
 
-	fragColor = vec4(color.rgb, 1.0);
+	// === Better Simple Clouds: soft terrain intersection (see uniform notes above). The cloud target's alpha is NOT a
+	// blend factor during this pass (blending is off) - it is what Simple Clouds' final composite blends with:
+	//   finalCol = cloudCol.rgb * cloudCol.a + bg * (1.0 - cloudCol.a)
+	// so writing a partial alpha here fades the cloud into the terrain behind it for free. Stock behaviour is alpha = 1
+	// (a plain "cloud / no cloud" mask), which is exactly what MicSoftFade = 0 keeps. ===
+	float softAlpha = 1.0;
+	if (MicSoftFade > 0.0 && MicNear > 0.0 && MicFar > MicNear)
+	{
+		float rawScene = texelFetch(MicSceneDepth, ivec2(gl_FragCoord.xy), 0).r;
+		// The depth buffer CLEARS TO 1.0, so rawScene >= 1.0 means "open sky, no terrain here" - the common case, and
+		// also the worst-conditioned input to feed the linearization. rawScene <= 0.0 means no depth is bound at all.
+		// Both must leave the cloud SOLID. (The old guard tested `> 0.0`, which every sky pixel passes - that is why
+		// sky-backed clouds, i.e. essentially all of them, were the ones being deleted.)
+		if (rawScene > 0.0 && rawScene < 1.0)
+		{
+			float sceneDist = micViewDist(rawScene);
+			float fragDist = micViewDist(gl_FragCoord.z);
+			// Fail-safe: only fade on a sane, positive pair of readings. Anything else leaves the cloud solid, so a bad
+			// depth read can never silently erase the cloud field again.
+			if (sceneDist > 0.0 && fragDist > 0.0)
+				softAlpha = clamp((sceneDist - fragDist) / MicSoftFade, 0.0, 1.0);
+		}
+	}
+
+	// A fully faded fragment must not stamp occluding depth into the cloud target: that depth is blitted into the
+	// transparency target, where it would depth-reject the translucent fringe sitting behind an invisible body - leaving
+	// only stray cloud outlines on screen (the "ghost occluder"). Alpha alone never suppresses a depth write.
+	if (softAlpha <= 0.0)
+		discard;
+
+	fragColor = vec4(color.rgb, softAlpha);
 }

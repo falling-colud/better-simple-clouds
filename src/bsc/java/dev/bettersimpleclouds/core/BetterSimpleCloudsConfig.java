@@ -73,6 +73,11 @@ public final class BetterSimpleCloudsConfig {
     private static final ModConfigSpec.BooleanValue IN_CLOUD_DEBUG;
 
     // --- CLIENT: cloud appearance ---
+    private static final ModConfigSpec.IntValue SOFT_TERRAIN_FADE;
+    private static final ModConfigSpec.BooleanValue NIGHT_CLOUDS;
+    private static final ModConfigSpec.IntValue MOON_GLOW;
+    private static final ModConfigSpec.IntValue MOON_GLOW_SHARPNESS;
+    private static final ModConfigSpec.IntValue NIGHT_CLOUDS_STRENGTH;
     private static final ModConfigSpec.BooleanValue IN_CLOUD_SHADER_MATCH;
     private static final ModConfigSpec.DoubleValue IN_CLOUD_SHADER_TINT;
     private static final ModConfigSpec.DoubleValue IN_CLOUD_SHADER_BRIGHT;
@@ -306,6 +311,52 @@ public final class BetterSimpleCloudsConfig {
         b.comment("Cloud appearance - how clouds blend into the scene, especially under an Iris shaderpack.")
             .translation(T + "section.appearance")
             .push("appearance");
+        SOFT_TERRAIN_FADE = b
+            .comment("Soften where clouds meet terrain, in blocks. Simple Clouds' clouds are solid cubes that know nothing",
+                     "about the world, so where one cuts into a mountain you get a hard polygonal edge - and because the",
+                     "cloud face and the terrain then sit at almost exactly the same depth, they Z-FIGHT: the intersection",
+                     "flickers as the depth test flips between cloud and terrain from pixel to pixel and frame to frame.",
+                     "With this on, a cloud fades out as it approaches the terrain behind it, so the cut becomes a soft",
+                     "gradient AND the flickering stops (the cloud contributes nothing exactly where the two coincide).",
+                     "This is the distance over which it fades: 0 = off (stock hard edge); ~8-16 is a natural haze; higher",
+                     "makes clouds shy away from terrain more. REQUIRES A SHADERPACK (Iris): only then does Simple Clouds",
+                     "render clouds after the world, which is what makes the terrain depth available to fade against. With",
+                     "shaders off this does nothing, no matter what it's set to.")
+            .translation(T + "appearance.softTerrainFade")
+            .defineInRange("softTerrainFadeBlocks", 12, 0, 64);
+        NIGHT_CLOUDS = b
+            .comment("Make clouds look good at night instead of flat grey blobs. At night Simple Clouds darkens the cloud",
+                     "colour to a near-uniform dark grey, which flattens out the subtle per-cube shading that gives a cloud",
+                     "its shape - so clouds read as featureless blobs. With this on, the cloud shaders re-open that crushed",
+                     "dark range, lift the exposure a little and add a cool moonlit cast, so the cloud's form is visible",
+                     "again and it looks moonlit rather than muddy. Only affects night (fades in after dusk, gone by day -",
+                     "daytime clouds are untouched), and works with or without a shaderpack. On by default.")
+            .translation(T + "appearance.nightClouds")
+            .define("betterNightClouds", true);
+        NIGHT_CLOUDS_STRENGTH = b
+            .comment("How strong the night look is, as a percent. 100 = the default moonlit grade; lower = closer to",
+                     "Simple Clouds' darker vanilla night; higher (up to 200) = brighter, more lifted night clouds. 0 = off",
+                     "(same as turning the toggle above off). Only matters when Better Night Clouds is on.")
+            .translation(T + "appearance.nightCloudsStrength")
+            .defineInRange("nightCloudBrightness", 100, 0, 200);
+        MOON_GLOW = b
+            .comment("Moonlight scattering THROUGH the clouds - the silver lining. Cloud droplets scatter light",
+                     "overwhelmingly FORWARDS, which is why a cloud drifting across the moon lights up along its edge",
+                     "instead of just blocking it. Simple Clouds has no notion of the moon at all, so a cloud crossing",
+                     "a full moon simply goes flat grey. This adds a physically-shaped forward-scattering lobe around",
+                     "the moon's direction, so clouds near it glow and clouds away from it do not. It already scales",
+                     "itself by moon PHASE (a full moon is ~4.4x a quarter moon, and a new moon gives nothing), by the",
+                     "moon's altitude, by rain, and by time of day - so it is silent by day and in a storm without any",
+                     "extra tuning. 0 = off.")
+            .translation(T + "appearance.cloudMoonGlow")
+            .defineInRange("cloudMoonGlow", 75, 0, 200);
+        MOON_GLOW_SHARPNESS = b
+            .comment("How tightly the moon glow hugs the moon, as a scattering asymmetry percent. 76 is a realistic",
+                     "cloud-droplet value: sharply peaked forward, so the lining reads as a bright RIM on the cloud in",
+                     "front of the moon. Lower spreads the light into a broader wash over more of the sky; higher",
+                     "concentrates it into a tighter, more dramatic halo right at the moon.")
+            .translation(T + "appearance.cloudMoonGlowSharpness")
+            .defineInRange("cloudMoonGlowSharpness", 76, 0, 95);
         IN_CLOUD_SHADER_MATCH = b
             .comment("Make the clouds blend into a shaderpack-lit scene instead of looking like flat white cut-outs.",
                      "Simple Clouds renders clouds with its own shader (Iris can't run them through the pack), so they",
@@ -651,6 +702,47 @@ public final class BetterSimpleCloudsConfig {
 
     // --- Cloud appearance ---
 
+    /**
+     * @return distance in blocks over which clouds fade out as they approach terrain ({@code 0} = off / stock hard
+     *         edge). Fed to the cloud shader's {@code MicSoftFade}; only meaningful on the shader-support pipeline.
+     */
+    public static int softTerrainFadeBlocks() {
+        return CLIENT_SPEC.isLoaded() ? SOFT_TERRAIN_FADE.get() : 12;
+    }
+
+    /** Sets and persists the soft terrain-intersection fade distance, in blocks. */
+    public static void setSoftTerrainFadeBlocks(final int blocks) {
+        SOFT_TERRAIN_FADE.set(Math.max(0, Math.min(64, blocks)));
+        SOFT_TERRAIN_FADE.save();
+    }
+
+    /** @return true if clouds should get the night grade (moonlit lift) instead of looking like flat dark grey blobs. */
+    public static boolean cloudNightBoost() {
+        return !CLIENT_SPEC.isLoaded() || NIGHT_CLOUDS.get();
+    }
+
+    /** Sets and persists whether the night grade is applied to clouds. */
+    public static void setCloudNightBoost(final boolean value) {
+        NIGHT_CLOUDS.set(value);
+        NIGHT_CLOUDS.save();
+    }
+
+    /** @return the night-grade strength as a {@code [0,2]} multiplier fed to the shader ({@code MicNightStrength}). */
+    public static float cloudNightBoostStrength() {
+        return (float) (CLIENT_SPEC.isLoaded() ? NIGHT_CLOUDS_STRENGTH.get() : 100) / 100.0F;
+    }
+
+    /** @return the night-grade strength as a 0-200 percent (video-settings slider). */
+    public static int cloudNightBoostPercent() {
+        return CLIENT_SPEC.isLoaded() ? NIGHT_CLOUDS_STRENGTH.get() : 100;
+    }
+
+    /** Sets and persists the night-grade strength from a 0-200 percent (video-settings slider). */
+    public static void setCloudNightBoostPercent(final int percent) {
+        NIGHT_CLOUDS_STRENGTH.set(Math.max(0, Math.min(200, percent)));
+        NIGHT_CLOUDS_STRENGTH.save();
+    }
+
     /** @return true if clouds should be nudged to blend into a shaderpack-lit scene (sky tint / exposure). */
     public static boolean inCloudShaderMatch() {
         return CLIENT_SPEC.isLoaded() && IN_CLOUD_SHADER_MATCH.get();
@@ -746,6 +838,38 @@ public final class BetterSimpleCloudsConfig {
     public static void setFarCloudFogResistPercent(final int percent) {
         IN_CLOUD_FOG_RESIST.set(Math.max(0, Math.min(100, percent)) / 100.0);
         IN_CLOUD_FOG_RESIST.save();
+    }
+
+    /** @return the moon-glow (forward scattering) master strength, {@code 0} = off. */
+    public static float cloudMoonGlowStrength() {
+        return (CLIENT_SPEC.isLoaded() ? MOON_GLOW.get() : 75) / 100.0F;
+    }
+
+    /** @return the moon glow strength as a 0-200 percent. */
+    public static int cloudMoonGlowPercent() {
+        return CLIENT_SPEC.isLoaded() ? MOON_GLOW.get() : 75;
+    }
+
+    /** Sets and persists the moon glow strength from a 0-200 percent. */
+    public static void setCloudMoonGlowPercent(final int percent) {
+        MOON_GLOW.set(Math.max(0, Math.min(200, percent)));
+        MOON_GLOW.save();
+    }
+
+    /** @return the scattering asymmetry {@code g}, {@code [0,0.95]} - how tightly the glow hugs the moon. */
+    public static float cloudMoonGlowSharpness() {
+        return (CLIENT_SPEC.isLoaded() ? MOON_GLOW_SHARPNESS.get() : 76) / 100.0F;
+    }
+
+    /** @return the glow sharpness as a 0-95 percent. */
+    public static int cloudMoonGlowSharpnessPercent() {
+        return CLIENT_SPEC.isLoaded() ? MOON_GLOW_SHARPNESS.get() : 76;
+    }
+
+    /** Sets and persists the glow sharpness from a 0-95 percent. */
+    public static void setCloudMoonGlowSharpnessPercent(final int percent) {
+        MOON_GLOW_SHARPNESS.set(Math.max(0, Math.min(95, percent)));
+        MOON_GLOW_SHARPNESS.save();
     }
 
     private BetterSimpleCloudsConfig() {}
