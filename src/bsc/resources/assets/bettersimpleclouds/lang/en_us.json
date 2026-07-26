@@ -40,6 +40,9 @@
   "bettersimpleclouds.config.appearance.farEdgeFade": "Soft Cloud Far Edge",
   "bettersimpleclouds.config.appearance.farEdgeFadePercent": "Far Edge Fade Range",
   "bettersimpleclouds.config.appearance.farCloudFogResist": "Far Cloud Fog Resistance (exp.)",
+  "bettersimpleclouds.config.appearance.cloudFogOwnRange": "Cloud Fog Uses Cloud Distance",
+  "bettersimpleclouds.config.appearance.cloudFogStartPercent": "Cloud Fog Start (%)",
+  "bettersimpleclouds.config.appearance.cloudFogEndPercent": "Cloud Fog End (%)",
   "bettersimpleclouds.config.appearance.cloudMoonGlow": "Moonlight Through Clouds",
   "bettersimpleclouds.config.appearance.cloudMoonGlowSharpness": "Moon Glow Tightness"
 }

@@ -13,7 +13,9 @@
         "SimpleCloudsRendererTransparencyWeightMixin",
         "SimpleCloudsShadersMixin",
         "StormFogBlurMixin",
-        "StormFogRainBehindCloudsMixin"
+        "StormFogRainBehindCloudsMixin",
+        "ScreenSpaceWorldFogRangeMixin",
+        "CloudShaderFogRangeMixin"
     ],
     "injectors": {
         "defaultRequire": 1

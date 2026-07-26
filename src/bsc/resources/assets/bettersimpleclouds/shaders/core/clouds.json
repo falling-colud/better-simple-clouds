@@ -226,6 +226,22 @@
       ]
     },
     {
+      "name": "MicCloudFogStart",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "MicCloudFogEnd",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
       "name": "MicNight",
       "type": "float",
       "count": 1,

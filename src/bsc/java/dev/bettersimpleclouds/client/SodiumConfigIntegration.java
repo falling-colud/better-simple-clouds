@@ -477,6 +477,50 @@ public final class SodiumConfigIntegration implements ConfigEntryPoint {
             .setBinding(BetterSimpleCloudsConfig::setFarCloudFogResistPercent,
                 BetterSimpleCloudsConfig::farCloudFogResistPercent);
 
+        final BooleanOptionBuilder cloudFogOwnRange = builder
+            .createBooleanOption(id("cloud_fog_own_range"))
+            .setName(Component.literal("Cloud Fog Uses Cloud Distance"))
+            .setTooltip(Component.literal(
+                "Fog the clouds over their own distance instead of the terrain's. Clouds are drawn far past where you "
+                    + "can see terrain, so the terrain fog range clamps nearly every cloud to fully fogged and the sky "
+                    + "goes one flat colour. This rebuilds the range from the cloud field's own extent so the sky keeps "
+                    + "depth. Most noticeable with fog mods that pull terrain fog in hard."))
+            .setImpact(OptionImpact.LOW)
+            .setDefaultValue(true)
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudFogOwnRange,
+                BetterSimpleCloudsConfig::cloudFogOwnRange);
+
+        final IntegerOptionBuilder cloudFogStart = builder
+            .createIntegerOption(id("cloud_fog_start"))
+            .setName(Component.literal("Cloud Fog Start"))
+            .setTooltip(Component.literal(
+                "Where cloud fog begins, as a percent of the cloud field's extent. The important one: at 0% fog starts "
+                    + "at the camera and washes near clouds too, which is what makes the sky look like a single flat "
+                    + "colour. Pushing it out keeps near clouds clean so only distant ones haze off."))
+            .setRange(0, 95, 5)
+            .setDefaultValue(35)
+            .setImpact(OptionImpact.LOW)
+            .setValueFormatter(SodiumConfigIntegration::percent)
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudFogStartPercent,
+                BetterSimpleCloudsConfig::cloudFogStartPercent);
+
+        final IntegerOptionBuilder cloudFogEnd = builder
+            .createIntegerOption(id("cloud_fog_end"))
+            .setName(Component.literal("Cloud Fog End"))
+            .setTooltip(Component.literal(
+                "Where cloud fog reaches full, as a percent of the cloud field's extent. 100% = a cloud at the very "
+                    + "edge is fully fogged out. Lower makes clouds disappear sooner; higher keeps the farthest clouds "
+                    + "partly visible."))
+            .setRange(10, 100, 5)
+            .setDefaultValue(100)
+            .setImpact(OptionImpact.LOW)
+            .setValueFormatter(SodiumConfigIntegration::percent)
+            .setStorageHandler(() -> {})
+            .setBinding(BetterSimpleCloudsConfig::setCloudFogEndPercent,
+                BetterSimpleCloudsConfig::cloudFogEndPercent);
+
         // ===================== Pages (each shows as its own category in Reese's) =====================
         final OptionPageBuilder cloudsPage = builder.createOptionPage()
             .setName(Component.literal("Clouds"))
@@ -494,6 +538,11 @@ public final class SodiumConfigIntegration implements ConfigEntryPoint {
                 .setName(Component.literal("Storm Fog (Distant Rain)"))
                 .addOption(rainBehindClouds)
                 .addOption(disableRainBlur))
+            .addOptionGroup(builder.createOptionGroup()
+                .setName(Component.literal("Cloud Fog"))
+                .addOption(cloudFogOwnRange)
+                .addOption(cloudFogStart)
+                .addOption(cloudFogEnd))
             .addOptionGroup(builder.createOptionGroup()
                 .setName(Component.literal("Transparency"))
                 .addOption(fixTransparentEdges)

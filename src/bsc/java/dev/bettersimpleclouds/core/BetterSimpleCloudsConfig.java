@@ -85,6 +85,9 @@ public final class BetterSimpleCloudsConfig {
     private static final ModConfigSpec.BooleanValue IN_CLOUD_EDGE_FADE;
     private static final ModConfigSpec.IntValue IN_CLOUD_EDGE_FADE_PCT;
     private static final ModConfigSpec.DoubleValue IN_CLOUD_FOG_RESIST;
+    private static final ModConfigSpec.BooleanValue CLOUD_FOG_OWN_RANGE;
+    private static final ModConfigSpec.IntValue CLOUD_FOG_START_PCT;
+    private static final ModConfigSpec.IntValue CLOUD_FOG_END_PCT;
 
     static {
         // ================================ COMMON ================================
@@ -399,6 +402,28 @@ public final class BetterSimpleCloudsConfig {
                      "like they don't sit in the haze). A testing dial for improving far clouds.")
             .translation(T + "appearance.farCloudFogResist")
             .defineInRange("farCloudFogResist", 0.0, 0.0, 1.0);
+        CLOUD_FOG_OWN_RANGE = b
+            .comment("Fog the clouds over their OWN distance instead of the terrain's. The cloud shader is handed the",
+                     "terrain fog range, but clouds are drawn over a far bigger area than you can see terrain across -",
+                     "so every cloud past the terrain fog end clamps to fully fogged and the whole sky flattens into one",
+                     "flat colour with no depth. This replaces that range with the two percentages below, taken from the",
+                     "cloud field's own extent, so clouds keep a real near-to-far gradient. Matters most with fog mods",
+                     "that pull the terrain fog in hard (Better Fog does, especially at night). Off = stock behaviour.")
+            .translation(T + "appearance.cloudFogOwnRange")
+            .define("cloudFogOwnRange", true);
+        CLOUD_FOG_START_PCT = b
+            .comment("Where cloud fog STARTS, as a percent of the cloud field's extent. This is the important one: at 0",
+                     "the fog begins at the camera and washes every cloud, near ones included, which is what makes the",
+                     "cloud field read as a single flat colour. Pushing the start out keeps near clouds clean and lets",
+                     "only the distant ones haze off, which is what gives the sky depth. Must be below the end percent.")
+            .translation(T + "appearance.cloudFogStartPercent")
+            .defineInRange("cloudFogStartPercent", 35, 0, 95);
+        CLOUD_FOG_END_PCT = b
+            .comment("Where cloud fog reaches FULL, as a percent of the cloud field's extent. 100 = a cloud at the very",
+                     "edge of the field is completely fogged out. Lower pulls the haze inward so clouds disappear",
+                     "sooner; higher keeps the farthest clouds partly visible.")
+            .translation(T + "appearance.cloudFogEndPercent")
+            .defineInRange("cloudFogEndPercent", 100, 10, 100);
         b.pop();
 
         CLIENT_SPEC = b.build();
@@ -873,4 +898,37 @@ public final class BetterSimpleCloudsConfig {
     }
 
     private BetterSimpleCloudsConfig() {}
+
+    /** @return true if clouds should be fogged over their own extent rather than the terrain fog range. */
+    public static boolean cloudFogOwnRange() {
+        return !CLIENT_SPEC.isLoaded() || CLOUD_FOG_OWN_RANGE.get();
+    }
+
+    /** Sets and persists whether cloud fog uses its own range. */
+    public static void setCloudFogOwnRange(final boolean value) {
+        CLOUD_FOG_OWN_RANGE.set(value);
+        CLOUD_FOG_OWN_RANGE.save();
+    }
+
+    /** @return where cloud fog starts, as a percent of the cloud field's extent. */
+    public static int cloudFogStartPercent() {
+        return CLIENT_SPEC.isLoaded() ? CLOUD_FOG_START_PCT.get() : 35;
+    }
+
+    /** Sets and persists the cloud-fog start percent. */
+    public static void setCloudFogStartPercent(final int percent) {
+        CLOUD_FOG_START_PCT.set(Math.max(0, Math.min(95, percent)));
+        CLOUD_FOG_START_PCT.save();
+    }
+
+    /** @return where cloud fog reaches full, as a percent of the cloud field's extent. */
+    public static int cloudFogEndPercent() {
+        return CLIENT_SPEC.isLoaded() ? CLOUD_FOG_END_PCT.get() : 100;
+    }
+
+    /** Sets and persists the cloud-fog end percent. */
+    public static void setCloudFogEndPercent(final int percent) {
+        CLOUD_FOG_END_PCT.set(Math.max(10, Math.min(100, percent)));
+        CLOUD_FOG_END_PCT.save();
+    }
 }

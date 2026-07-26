@@ -43,6 +43,7 @@ neoForge {
         client {
             client()
             gameDirectory = file('run')
+            programArguments.addAll('--quickPlaySingleplayer', 'New World')
         }
     }
 

@@ -46,6 +46,16 @@ uniform float MicEdgeFadeStrength = 0.0;
 uniform float MicEdgeFadeStart = 0.0;
 uniform float MicEdgeFadeEnd = 0.0;
 uniform float MicFogResist = 0.0;
+
+// Better Simple Clouds: cloud-relative fog range. FogStart/FogEnd carry the TERRAIN fog, which is tuned for a view a
+// fraction of the distance clouds are drawn over - so every cloud past the terrain fog end clamps to fully fogged and
+// the sky flattens into one flat colour. When MicCloudFogEnd > 0 these replace them with a range set as fixed
+// percentages of the cloud field's own extent, so the clouds keep a real near->far gradient no matter what the terrain
+// fog is doing. 0 = off, behave exactly as before.
+uniform float MicCloudFogStart = 0.0;
+uniform float MicCloudFogEnd = 0.0;
+float micFogStart() { return MicCloudFogEnd > 0.0 ? MicCloudFogStart : FogStart; }
+float micFogEnd()   { return MicCloudFogEnd > 0.0 ? MicCloudFogEnd   : FogEnd; }
 // Night legibility (same treatment as the opaque clouds.fsh, so a cloud's soft translucent fringes and its filled
 // interior stay matched to the graded opaque body at night). MicNight = how "night" it is (0 by day -> inert),
 // MicNightStrength = configured strength (0 = off). Fed each frame by CloudNightGrade.
@@ -59,6 +69,12 @@ uniform sampler2D MicSceneDepth;
 uniform float MicSoftFade = 0.0;
 uniform float MicNear = 0.0;
 uniform float MicFar = 0.0;
+// Smooth chunk fade-in - identical to the opaque clouds.fsh, and NOT optional here. Simple Clouds fades a newly
+// generated chunk in by discarding pixels against a SCREEN-space Bayer matrix, so a mid-fade chunk wears a fixed
+// cross-hatch of noise that does not move with the cloud. This pass is where it shows worst: the fringe is what you
+// see another cloud through, and the two passes dither independently, so their patterns compound. Feeding this to the
+// body but not the fringe would be the same body/fringe mismatch the note at the top of this file warns about, just
+// expressed in coverage rather than colour. 0 = stock dithered fade. See CloudChunkFade.
 
 float micViewDist(float winZ)
 {
@@ -164,7 +180,7 @@ void main()
 	// first because the two halves are not the same kind of thing: MicFogResist is a COLOUR choice ("hold far clouds back
 	// from washing out"), while lerping alpha toward FogColor.a feeds the OIT coverage below and must keep its stock
 	// behaviour regardless. At MicFogResist = 0 these two lines are exactly the stock mix(color, FogColor, fogT). ===
-	float fogT = smoothstep(FogStart, FogEnd, fogDistance);
+	float fogT = smoothstep(micFogStart(), micFogEnd(), fogDistance);
 	color.a = mix(color.a, FogColor.a, fogT);
 	color.rgb = mix(color.rgb, FogColor.rgb, fogT * (1.0 - clamp(MicFogResist, 0.0, 1.0)));
 
@@ -176,7 +192,7 @@ void main()
 	// so a fog mod pulling FogEnd in (Better Fog does, at night) now just compresses both passes together. ===
 	if (MicSkyTint > 0.0)
 	{
-		float aerial = smoothstep(0.0, FogEnd, fogDistance);
+		float aerial = smoothstep(0.0, micFogEnd(), fogDistance);
 		color.rgb = mix(color.rgb, MicSkyColor, clamp(MicSkyTint * aerial, 0.0, 1.0));
 	}
 	if (MicSaturation != 1.0)

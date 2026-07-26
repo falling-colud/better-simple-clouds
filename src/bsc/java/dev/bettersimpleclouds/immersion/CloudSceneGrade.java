@@ -2,6 +2,9 @@ package dev.bettersimpleclouds.immersion;
 
 import com.mojang.blaze3d.shaders.AbstractUniform;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.Vec3;
@@ -52,6 +55,8 @@ import dev.nonamecrackers2.simpleclouds.client.shader.SingleSSBOShaderInstance;
  */
 public final class CloudSceneGrade {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     private CloudSceneGrade() {}
 
     /**
@@ -76,6 +81,7 @@ public final class CloudSceneGrade {
 
         // Far-cloud fog resistance is independent of shader-match / far-edge-fade, so set it unconditionally; 0 = stock.
         shader.safeGetUniform("MicFogResist").set(BetterSimpleCloudsConfig.farCloudFogResist());
+
 
         final boolean match = BetterSimpleCloudsConfig.inCloudShaderMatch();
         final boolean farEdge = BetterSimpleCloudsConfig.inCloudFarEdgeFade();
@@ -110,4 +116,5 @@ public final class CloudSceneGrade {
             edge.set(0.0F);
         }
     }
+
 }

@@ -30,6 +30,16 @@ uniform float MicEdgeFadeEnd = 0.0;
 // the horizon). This holds that back so far/edge clouds stay vivid. 0 = stock fade; 1 = clouds keep full colour to the
 // edge (can look like they don't sit in the haze). Inert at 0.
 uniform float MicFogResist = 0.0;
+
+// Better Simple Clouds: cloud-relative fog range. FogStart/FogEnd carry the TERRAIN fog, which is tuned for a view a
+// fraction of the distance clouds are drawn over - so every cloud past the terrain fog end clamps to fully fogged and
+// the sky flattens into one flat colour. When MicCloudFogEnd > 0 these replace them with a range set as fixed
+// percentages of the cloud field's own extent, so the clouds keep a real near->far gradient no matter what the terrain
+// fog is doing. 0 = off, behave exactly as before.
+uniform float MicCloudFogStart = 0.0;
+uniform float MicCloudFogEnd = 0.0;
+float micFogStart() { return MicCloudFogEnd > 0.0 ? MicCloudFogStart : FogStart; }
+float micFogEnd()   { return MicCloudFogEnd > 0.0 ? MicCloudFogEnd   : FogEnd; }
 // Night legibility: at night Simple Clouds' clouds collapse into flat dark grey blobs - the cloud colour is multiplied
 // down to a dark grey and the per-cube brightness that gives a cloud its shape gets crushed into the bottom of the
 // range where nothing reads. This opens that range back up (gamma), lifts exposure and adds a cool moonlit cast so the
@@ -131,7 +141,7 @@ void main()
 	color.rgb += micMoonScatter();
 
 	// Better Simple Clouds: optionally hold back Simple Clouds' distance-fog wash so far/edge clouds stay vivid.
-	color = mix(color, FogColor, smoothstep(FogStart, FogEnd, fogDistance) * (1.0 - clamp(MicFogResist, 0.0, 1.0)));
+	color = mix(color, FogColor, smoothstep(micFogStart(), micFogEnd(), fogDistance) * (1.0 - clamp(MicFogResist, 0.0, 1.0)));
 
 	// === Better Simple Clouds: match the shader-lit scene a little better (inert at defaults). ===
 	// Aerial perspective: tint toward the sky colour with DISTANCE only, so near clouds keep their true colour and
